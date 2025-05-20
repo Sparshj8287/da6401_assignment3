@@ -14,6 +14,18 @@ class Decoder(L.LightningModule):
         input_embedding_size: int,
         dropout: float,
     ):
+        """
+        Decoder module for a sequence-to-sequence model with Bahdanau attention.
+
+        Args:
+            cell (str): Type of RNN cell to use (e.g., "LSTM", "GRU").
+            hidden_size (int): Size of the hidden state in the RNN.
+            layers (int): Number of recurrent layers.
+            bidirectional (int): Indicates if the encoder was bidirectional (0 or 1).
+                                 This affects dimensions for attention and RNN input.
+            input_embedding_size (int): Base size of the input token embeddings.
+            dropout (float): Dropout probability for the RNN layers.
+        """
         super(Decoder, self).__init__()
         self.cell = CellType[cell].value
         self.hidden_size = hidden_size
@@ -116,6 +128,20 @@ class Decoder(L.LightningModule):
         self.att_activation = nn.Softmax(dim=0)
 
     def bahdanau_attention(self, output, hidden, embeddings):
+        """
+        Computes Bahdanau attention context vector.
+
+        Args:
+            enc_outputs (torch.Tensor): Outputs from the encoder.
+                                       Shape: (batch_size, enc_seq_len, enc_hidden_size * bidir_multiplier).
+            hidden (torch.Tensor or Tuple[torch.Tensor, torch.Tensor]): Previous decoder hidden state.
+                                      Shape (for h_n): (num_layers, batch_size, dec_hidden_size).
+            current_embedding (torch.Tensor): Embedding of the current decoder input token.
+                                              Shape: (batch_size, embedding_dim).
+        Returns:
+            torch.Tensor: Concatenation of the context vector and the current embedding.
+                          Shape: (batch_size, (enc_hidden_size * bidir_multiplier) + embedding_dim).
+        """
         if isinstance(hidden, tuple):
             hidden = hidden[0][0]
         else:
@@ -130,6 +156,15 @@ class Decoder(L.LightningModule):
         return x
 
     def normal_forward(self, enc_output, hiddens):
+        """
+        Generates sequences step-by-step using model's own predictions with attention.
+
+        Args:
+            enc_output (torch.Tensor): Encoder outputs.
+                                       Shape: (batch_size, enc_seq_len, enc_hidden_size * bidir_multiplier).
+            hiddens: Initial decoder hidden state from encoder.
+        """
+
         batch_size = len(hiddens[0])
         if isinstance(hiddens, tuple):
             batch_size = len(hiddens[0][0])
@@ -157,6 +192,14 @@ class Decoder(L.LightningModule):
         return output.transpose(0, 1).contiguous()
 
     def teacher_forcing_forward(self, enc_output, hiddens, tf_input_seqs):
+        """
+        Generates sequences using teacher forcing with attention.
+
+        Args:
+            enc_output (torch.Tensor): Encoder outputs.
+            hiddens: Initial decoder hidden state from encoder.
+            tf_input_seqs (torch.Tensor): Ground truth target sequences.
+        """
         start_seq = (
             torch.IntTensor([self.vocab.index("<START>")] * tf_input_seqs.shape[0])
             .to(device="cuda")
@@ -183,6 +226,16 @@ class Decoder(L.LightningModule):
         return output.transpose(0, 1).contiguous()
 
     def forward(self, enc_output, hiddens, tf_input_seqs=None):
+        """
+        Main forward pass for the decoder with attention.
+
+        Args:
+            enc_output (torch.Tensor): Outputs from the encoder. Used by attention.
+                                       Shape: (batch_size, enc_seq_len, enc_hidden_size * bidir_multiplier).
+            hiddens: Initial decoder hidden state from encoder.
+            tf_input_seqs (torch.Tensor, optional): Target sequences for teacher forcing.
+                                                    Defaults to None.
+        """
         if tf_input_seqs is not None:
             output = self.teacher_forcing_forward(enc_output, hiddens, tf_input_seqs)
         else:

@@ -31,6 +31,19 @@ class RNN(L.LightningModule):
         enc_dropout: float,
         dec_dropout: float,
     ):
+        """
+        Recurrent Neural Network (RNN) model for sequence-to-sequence tasks.
+
+        Args:
+            n_layers (int): Number of layers in both encoder and decoder RNNs.
+            cell (str): Type of RNN cell to use (e.g., "LSTM", "GRU").
+            hidden_size (int): Size of the hidden state in RNN cells.
+            input_embedding_size (int): Dimensionality of input token embeddings.
+            lr (float): Learning rate for the optimizer.
+            bidirectional (bool): Whether the encoder RNN is bidirectional.
+            enc_dropout (float): Dropout rate for the encoder RNN.
+            dec_dropout (float): Dropout rate for the decoder RNN.
+        """
         super().__init__()
         self.n_layers = n_layers
         self.hidden_size = hidden_size
@@ -70,6 +83,16 @@ class RNN(L.LightningModule):
         )
 
     def forward(self, input_seqs, tf_input_seqs=None, tf_prob: float = 0):
+        """
+        Defines the forward pass of the RNN model.
+
+        Args:
+            input_seqs (torch.Tensor): Input sequences for the encoder.
+            tf_input_seqs (torch.Tensor, optional): Target sequences for teacher forcing in the decoder.
+                                                    Defaults to None.
+            tf_prob (float, optional): Probability (0-100) of using teacher forcing.
+                                       Defaults to 0 (no teacher forcing).
+        """
         hiddens = self.encoder(input_seqs)
 
         if tf_prob and random.randrange(1, 100) <= tf_prob:
@@ -80,6 +103,14 @@ class RNN(L.LightningModule):
         return y
 
     def add_softmax_padding(self, t: torch.Tensor, c: int):
+        """
+        Pads a tensor `t` with softmax distributions that represent <PAD> tokens.
+        This is used to make tensor `t` have the same sequence length as target sequences if `t` is shorter.
+
+        Args:
+            t (torch.Tensor): The tensor to pad (predictions). Shape (batch_size, seq_len, vocab_size).
+            c (int): The number of padding steps to add.
+        """
         vocab_len = len(self.decoder.vocab)
         softmax = torch.zeros(vocab_len).to(device="cuda")
         softmax[vocab_len - 3] = 1
@@ -88,6 +119,16 @@ class RNN(L.LightningModule):
         return torch.cat((t.transpose(0, 1), rep_softmax)).transpose(0, 1).contiguous()
 
     def pre_process_text(self, x: Tuple[str], y: Tuple[str]):
+        """
+        Converts raw text sequences (source and target) into padded integer tensors.
+
+        Args:
+            x (Tuple[str]): A batch of source text sequences.
+            y (Tuple[str]): A batch of target text sequences.
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor]: Padded input sequences and padded target sequences for teacher forcing.
+        """
         input_seqs = []
         tf_input_seqs = []
         for x1, y1 in zip(x, y):
@@ -111,6 +152,13 @@ class RNN(L.LightningModule):
         return (padded_input_seqs, padded_tf_input_seqs)
 
     def training_step(self, batch, batch_idx: int):
+        """
+        Performs a single training step.
+
+        Args:
+            batch: A batch of data from the DataLoader (source sequences, target sequences).
+            batch_idx (int): The index of the current batch.
+        """
         x, y = batch
 
         input_seqs, tf_input_seqs = self.pre_process_text(x, y)
@@ -169,6 +217,13 @@ class RNN(L.LightningModule):
         return loss
 
     def validation_step(self, batch, batch_idx):
+        """
+        Performs a single validation step.
+
+        Args:
+            batch: A batch of data from the DataLoader.
+            batch_idx (int): The index of the current batch.
+        """
         x, y = batch
 
         input_seqs, tf_input_seqs = self.pre_process_text(x, y)
@@ -248,6 +303,12 @@ class RNN(L.LightningModule):
 
 
 def train(args):
+    """
+    Main training function. Sets up logging, data, model, and trainer, then starts training.
+
+    Args:
+        args (argparse.Namespace): Command-line arguments and hyperparameters.
+    """
     if args.log_location == "wandb":
         wandb.init(entity=args.wandb_entity, project=args.wandb_project)
         wandb.run.name = f"cell_{args.cell}_bd_{args.bidirectional}_bs_{args.batch_size}_l_{args.layers}_e_{args.epochs}_hs_{args.hidden_size}_ies_{args.input_embedding_size}_id_{wandb.run.id}"
